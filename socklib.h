@@ -1,16 +1,62 @@
 #ifndef _NETWORK_LIB_H
 #define _NETWORK_LIB_H
 
-#ifdef UNICODE
+/*
+* 
+* 
+*								MIT License
+*
+*	Copyright(c) 2022 Lloyd Jay Arpilleda Edradan
+*
+*	Permission is hereby granted, free of charge, to any person obtaining a copy
+*	of this softwareand associated documentation files(the "Software"), to deal
+*	in the Software without restriction, including without limitation the rights
+*	to use, copy, modify, merge, publish, distribute, sublicense, and /or sell
+*	copies of the Software, and to permit persons to whom the Software is
+*	furnished to do so, subject to the following conditions :
+*
+*	The above copyright noticeand this permission notice shall be included in all
+*	copies or substantial portions of the Software.
+*
+*	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+*	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+*	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.IN NO EVENT SHALL THE
+*	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+*	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+*	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+*	SOFTWARE.
+* 
+* 
+*/
+
+
+/* --------------------------------------------------------------------	*/
+/*								Version: 1.0							*/
+/* --------------------------------------------------------------------	*/
+/*
+* ChangeLog: (July 8, 2022)
+*	provides basic interface for sockets 
+*/
+
+/* --------------------------------------------------------------------	*/
+/*								TODO									*/
+/* --------------------------------------------------------------------	*/
+/*
+* Test Implemtation
+* 
+*/
+
+
+#ifdef UNICODE		// no unicode for me
 #undef UNICODE
 #elif defined _UNICODE
 #undef _UNICODE
 #endif // UNICODE
 
 
-#ifndef _WIN32
-#warning Windows only
-#endif // MSC_VER
+#ifndef _WIN32		// code only works on windows
+#error Windows only
+#endif
 
 
 #pragma comment(lib, "ws2_32.lib")
@@ -23,19 +69,13 @@
 #include <queue>
 #include <vector>
 
-#define __INET_MSG_SIZE 2048 // 2 bytes
+constexpr unsigned int __INET_MSG_SIZE = 2048; // 2 4bytes
 
 enum class INET_PROTO {
 	TCP = SOCK_STREAM, UDP = SOCK_DGRAM
 };
 
-enum class NET_TYPE
-{
-	SERVER_TO_CLIENT,
-	CLIENT_TO_SERVER
-};
-
-typedef struct INetClient {
+typedef struct INetClientInfo {
 	SOCKET			clientSocket;
 	sockaddr_in		clientAddrInfo;
 };
@@ -43,48 +83,27 @@ typedef struct INetClient {
 typedef struct INetClientMessage {
 	char			msg[__INET_MSG_SIZE];	// message
 	unsigned int	msgSize;				// message size
-	INetClient*		msgOwner;				// message owner
+	INetClientInfo	msgOwner;				// message owner
 };
 
 typedef struct INetServerReply {
 	char			msg[__INET_MSG_SIZE];
 	uint32_t		msgSize;
-	INetClient*		msgReceiver;
+	INetClientInfo	msgReceiver;
 };
 
-class INet {
+typedef struct INetMsg {
+	char			msg[__INET_MSG_SIZE];
+	uint32_t		msgSize;
+};
 
-private:
 
-	// -------------------------- ----------------------------------------------
-	// this will probably get deprecated
-	WSADATA				m_WSAData;
-	sockaddr_in			m_clientAdd;
-	sockaddr_in			m_serverAdd; // the server address to be connected  to
-	std::thread			m_comThread;
-	bool				m_isConnectionEstablised = false;
-	SOCKET				m_clientSocket; // the client that is connecting to the server
-	SOCKET				m_winSock;		// server socket
-	unsigned short		m_portNumber;
-	sockaddr_in			m_sockInfo;		// incoming connection socket info
-	NET_TYPE			m_netType;
 
-	// -------------------------- New Version ---------------------------- //
+/* ---------------------------------------------------------------------------- */
+/*						The server socket interface								*/
+/* ---------------------------------------------------------------------------- */
 
-	// Server --
-	bool							m_isQuerying = false;	// flag to see if msg query is active
-	bool							m_isReceiving = false;	// flag to see if thread is still receiving 
-	bool							m_isListening = false;	// flag to see if the listening thread already started
-	SOCKET							m_serverSocket;			// the server socket id... of some sort
-	sockaddr_in						m_serverSocketInfo;		// i really dunno what is this... transport addres of some sort
-	std::vector<INetClient>			m_establisedConn;		// currently established connections
-	std::queue<INetClientMessage>	m_msgQueue;				// the received message queue.
-	std::queue<INetServerReply>		m_msgToSendQueue;		// message to send to
-	std::thread						m_listeningThread;		// thread use to listen for connections
-	std::thread						m_getDataThread;		// thread use to get data from the establised connections
-	std::thread						m_queryMsgThread;		// the thread to use to query msg from the queue
-	
-	
+class INetServer {
 
 public:
 	void		serverStartListening();									// starts the listening thread for an incoming connection;
@@ -92,113 +111,63 @@ public:
 	void		serverStartQueryMsg(void(*query)(INetClientMessage));	// start the thread for msg query
 	uint32_t	getConnectedClientCount();								// returns the number of connected client
 	void		sendMessage(INetServerReply);							// adds a message to the reply queue
+
+	INetServer();
+	INetServer(INET_PROTO, unsigned short PortNumber);
+	~INetServer();
 private:
+	
+	bool							m_isQuerying = false;	// flag to see if msg query is active
+	bool							m_isReceiving = false;	// flag to see if thread is still receiving 
+	bool							m_isListening = false;	// flag to see if the listening thread already started
+	bool							m_isPacketsSend = false;// flag to see if packet sending thread is running
+	SOCKET							m_serverSocket;			// the server socket id... of some sort
+	sockaddr_in						m_serverSocketInfo;		// i really dunno what is this... transport addres of some sort
+	std::vector<INetClientInfo>		m_establisedConn;		// currently established connections
+	std::queue<INetClientMessage>	m_msgQueue;				// the received message queue.
+	std::queue<INetServerReply>		m_msgToSendQueue;		// message queue to send to
+	std::thread						m_listeningThread;		// thread use to listen for connections
+	std::thread						m_getDataThread;		// thread use to get data from the establised connections
+	std::thread						m_queryMsgThread;		// the thread to use to query msg from the queue
+	std::thread						m_packetSenderThread;	// the thread that will run serverSendingPackets()
+	WSADATA							m_WSAData;				// wsa
+	unsigned short					m_portNumber;			// port number
+
 	void		queryMessage(void(*query)(INetClientMessage));			// takes a function pointer that this function will for the user to query the message queue	
 	void		serverListening();										// the function that the serverStartListening() will call
 	void		serverReceiving();										// the function that the serverStarReceiving will call
-
-	// ---------------------------------------------------------------------- //
-
-private:
-	void Receiving(void(*Receiver)(char* data, unsigned int nDataSize));
-	void Listening();
-	void Connecting();
-public:
-
-
-	/*
-	---------------------------------------------------------------------------------------------
-		This method start a thread that waits for an
-		incomming connection to established
-		should only be called once
-	---------------------------------------------------------------------------------------------
-	*/
-	void ListenForConnection();
-
-	/*
-	---------------------------------------------------------------------------------------------
-		This method returns true if a connection is establised
-		ListforConnection() should be called first before querying
-
-		-----------------------------------------------------------------------------------------
-		@return - returns true if connection is established
-		-----------------------------------------------------------------------------------------
-
-	---------------------------------------------------------------------------------------------
-	*/
-	bool isEstablised();
-
-	/*
-	---------------------------------------------------------------------------------------------
-		This method sends data the in the buffer to a established connection
-		isEstablished() must be called first to check if connection exist
-
-		--- this method may block the program ---
-
-		-----------------------------------------------------------------------------------------
-		@param data - a pointer to buffer that contains the data to be sent
-		-----------------------------------------------------------------------------------------
-
-		-----------------------------------------------------------------------------------------
-		@param nDataSize - the size of the data in bytes
-		-----------------------------------------------------------------------------------------
-
-		-----------------------------------------------------------------------------------------
-		@return - returns the number of bytes that was sent
-		-----------------------------------------------------------------------------------------
-
-	---------------------------------------------------------------------------------------------
-	*/
-	unsigned int sendData(char* data, unsigned int nDataSize);
-
-	/*
-	---------------------------------------------------------------------------------------------
-		This method stops the thread from the ListenForConnection() method
-		and uses the existing thread to try to catch any data that was received
-		isEstablished() must be called first to check if connection exist
-
-		-----------------------------------------------------------------------------------------
-		@param void(*CallBackFunc)(char *, unsigned int) - this function pointer will be called if
-		a data was received. the function will have a parameter that contains a pointer to buffer
-		data and the size of the data in bytes
-		-----------------------------------------------------------------------------------------
-
-	---------------------------------------------------------------------------------------------
-
-	*/
-	void StartReceivingData(void (*CallBackFunc)(char* data, unsigned int nDataSize));
-
-	/*
-	---------------------------------------------------------------------------------------------
-		This method will start a thread then tries to connect to a host
-		it should ebe only called once. To check if connected call the isEstablished() method
-
-		-----------------------------------------------------------------------------------------
-		@param IPAdd - is a std::string that will contain the ip address of the host
-		-----------------------------------------------------------------------------------------
-
-	---------------------------------------------------------------------------------------------
-	*/
-	void ConnectToServer(std::string IPAdd);
-
-
-	/*
-	---------------------------------------------------------------------------------------------
-		Closes the connection if there is a connection established
-	---------------------------------------------------------------------------------------------
-	*/
-	void CloseConnection();
-
-	INet();
-	INet(NET_TYPE);
-	INet(INET_PROTO, unsigned short PortNumber);
-
-
-	~INet();
+	void		serverStartSending();									// this function will start a thread that will send the packets
+	void		serverSendingPackets();									// this funtion will be called to another thread to start sending data from reply queue
 };
 
+/* ---------------------------------------------------------------------------- */
+/*						The client socket interface								*/
+/* ---------------------------------------------------------------------------- */
 
+class INetClient {
 
+public:
+	INetClient();											// defaults the protocol to be TCP with port number 80
+	INetClient(INET_PROTO protocol, unsigned short portNum);// construct with the assigned protocol and port number
+	
+	void connectToServer(std::string ip);					// connects to the server with ip
+	void disconnectToServer();								// send server a signal to disconnect
+	bool isConnected();										// query if we are connected to a server
+	bool sendToServer(INetMsg msg);							// sends packet to server
+	bool sendToServer(INetMsg * msgBlock, uint32_t count);	// sends multiple packets to server
+	INetMsg getMessage(unsigned int* msgQueueSize);			// returns the message in front of the message queue
+private:
+	void acceptingMsg();
+
+	WSADATA							m_WSAData;				// WSA
+	SOCKET							m_Socket;				// socket
+	sockaddr_in						m_serverAddr;			// the server the address 
+	unsigned short					m_portNumber;			// port number
+	bool							m_isConnected = false;	// flag if we are connected to a server
+	std::thread						m_recvThread;			// the thread that will accumulate the packets received
+	std::queue<INetMsg>				m_msgQueue;				// the packets received queue
+
+};
 
 
 #endif // _NETWORK_LIB_H
